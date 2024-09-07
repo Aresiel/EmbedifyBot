@@ -2,7 +2,8 @@
 extern crate dotenv_codegen;
 
 use std::sync::Arc;
-use serenity::all::{Context, CreateEmbed, CreateEmbedFooter, CreateMessage, EventHandler, GatewayIntents, Message, Ready};
+use std::time::Duration;
+use serenity::all::{Context, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage, EventHandler, GatewayIntents, Message, Ready};
 use serenity::{async_trait, Client};
 use regex::Regex;
 use serenity::builder::CreateAllowedMentions;
@@ -10,6 +11,7 @@ use serenity::prelude::TypeMapKey;
 use spotify_rs::{ClientCredsClient, ClientCredsFlow};
 use spotify_rs::auth::{NoVerifier, Token};
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 
 struct SpotifyClientHolder;
 impl TypeMapKey for SpotifyClientHolder {
@@ -104,6 +106,10 @@ impl EventHandler for Handler {
                 .allowed_mentions(CreateAllowedMentions::new());
 
             msg.channel_id.send_message(&ctx.http, builder).await.ok();
+
+            /*sleep(Duration::from_secs(2)).await;
+            let mut mut_msg = msg.clone(); // Because apparently yes
+            mut_msg.edit(&ctx, EditMessage::new().suppress_embeds(true)).await.ok();*/
         }
     }
 
