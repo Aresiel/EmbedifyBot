@@ -18,24 +18,57 @@ impl TypeMapKey for SpotifyClientHolder {
 
 struct Handler;
 
+async fn message_author_has_embed_link_perm_inside_guild(ctx: &Context, msg: &Message) -> Option<bool> {
+    let guild_channel =  msg.channel(&ctx.http).await.ok()?.guild()?;
+    let member = guild_channel.guild_id.member(&ctx.http, msg.author.id).await.ok()?;
+    let guild = guild_channel.guild_id.to_partial_guild(&ctx.http).await.ok()?;
+    let member_permissions = guild.user_permissions_in(&guild_channel, &member);
+
+    Some(member_permissions.embed_links())
+}
+
+fn get_embeddable_spotify_track_ids_in_string(string: &String) -> Vec<String> {
+    let track_re = Regex::new(r"(<?)https?://open\.spotify\.com/track/([A-Za-z0-9]*)[&?=A-Za-z0-9]*(>?)").unwrap();
+
+    track_re.captures_iter(&*string)
+        .take(3) // To prevent heavy load on the spotify api, 10 is Discord's limit
+        .map(|c| c.extract())
+        .filter_map(|(_, [left_pad, track_id, right_pad])| {
+            if left_pad.len() > 0 && right_pad.len() > 0 { // Handle links with embeds explicitly disabled
+                None
+            } else {
+                Some(track_id.to_string())
+            }
+        })
+        .collect()
+}
+
+fn is_spotify_track_id_embedded_in_message(message: &Message, track_id: &String) -> bool {
+    message.embeds.iter()
+        .filter(|embed| embed.kind.as_ref().is_some_and(|kind| kind == "link"))
+        .filter(|embed| embed.provider.as_ref().is_some_and(|provider| provider.name.as_ref().is_some_and(|name| name == "Spotify")))
+        .any(|embed| embed.url.as_ref().is_some_and(|url| url.contains(track_id)))
+}
+
 #[async_trait]
 impl EventHandler for Handler {
 
     async fn message(&self, ctx: Context, msg: Message) {
-        let track_re = Regex::new(r"open\.spotify\.com\/track\/([A-Za-z0-9]+)").unwrap();
-        let album_re = Regex::new(r"open\.spotify\.com\/album\/([A-Za-z0-9]+)").unwrap();
+        if !message_author_has_embed_link_perm_inside_guild(&ctx, &msg).await.is_some_and(|b| b == true) {
+            return
+        }
 
         let tracks: Vec<spotify_rs::model::track::Track> = {
             let data_read = ctx.data.read().await;
             let spotify_holder_lock = data_read.get::<SpotifyClientHolder>().expect("Expected SpotifyClientHolder in TypeMap").clone();
             let mut spotify_client = spotify_holder_lock.write().await;
 
-            let track_ids = track_re.captures_iter(&*msg.content)
-                .take(3) // To prevent heavy load on the spotify api, 10 is Discord's limit
-                .map(|c| c.extract())
-                .map(|(_, [track_id])| track_id);
+            let track_ids: Vec<String> = get_embeddable_spotify_track_ids_in_string(&msg.content).iter()
+                .filter(|track_id| !is_spotify_track_id_embedded_in_message(&msg, track_id))
+                .map(|string| string.clone())
+                .collect();
 
-            let mut tracks: Vec<spotify_rs::model::track::Track> = vec!();
+            let mut tracks: Vec<spotify_rs::model::track::Track> = vec!(); // TODO: Make this less mutating without having all the closures complain :sob:
             for track_id in track_ids {
                 if let Ok(track) = spotify_client.track(track_id).market(dotenv!("SPOTIFY_MARKET")).get().await {
                     tracks.push(track);
