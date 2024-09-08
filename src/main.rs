@@ -66,7 +66,7 @@ impl EventHandler for Handler {
             let mut spotify_client = spotify_holder_lock.write().await;
 
             let track_ids: Vec<String> = get_embeddable_spotify_track_ids_in_string(&msg.content).iter()
-                .filter(|track_id| !is_spotify_track_id_embedded_in_message(&msg, track_id))
+                .filter(|track_id| !is_spotify_track_id_embedded_in_message(&msg, track_id)) // Comment out if using embed suppression
                 .map(|string| string.clone())
                 .collect();
 
@@ -107,9 +107,9 @@ impl EventHandler for Handler {
 
             msg.channel_id.send_message(&ctx.http, builder).await.ok();
 
-            /*sleep(Duration::from_secs(2)).await;
-            let mut mut_msg = msg.clone(); // Because apparently yes
-            mut_msg.edit(&ctx, EditMessage::new().suppress_embeds(true)).await.ok();*/
+            //sleep(Duration::from_secs(1)).await; // Maybe? Wait to make sure Discord has time to populate the embeds
+            //let mut mut_msg = msg.clone();
+            //mut_msg.edit(&ctx, EditMessage::new().suppress_embeds(true)).await.ok();
         }
     }
 
