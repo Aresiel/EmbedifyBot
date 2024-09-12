@@ -7,6 +7,8 @@ use serenity::all::{Context, CreateEmbed, CreateEmbedFooter, CreateMessage, Edit
 use serenity::{async_trait, Client};
 use regex::Regex;
 use serenity::builder::CreateAllowedMentions;
+use serenity::futures::stream;
+use serenity::futures::StreamExt;
 use serenity::prelude::TypeMapKey;
 use spotify_rs::{ClientCredsClient, ClientCredsFlow};
 use spotify_rs::auth::{NoVerifier, Token};
@@ -61,14 +63,15 @@ impl EventHandler for Handler {
         }
 
         let tracks: Vec<spotify_rs::model::track::Track> = {
-            let data_read = ctx.data.read().await;
-            let spotify_holder_lock = data_read.get::<SpotifyClientHolder>().expect("Expected SpotifyClientHolder in TypeMap").clone();
-            let mut spotify_client = spotify_holder_lock.write().await;
-
             let track_ids: Vec<String> = get_embeddable_spotify_track_ids_in_string(&msg.content).iter()
                 .filter(|track_id| !is_spotify_track_id_embedded_in_message(&msg, track_id)) // Comment out if using embed suppression
                 .map(|string| string.clone())
                 .collect();
+
+
+            let data_read = ctx.data.read().await;
+            let spotify_holder_lock = data_read.get::<SpotifyClientHolder>().expect("Expected SpotifyClientHolder in TypeMap").clone();
+            let mut spotify_client = spotify_holder_lock.write().await;
 
             let mut tracks: Vec<spotify_rs::model::track::Track> = vec!(); // TODO: Make this less mutating without having all the closures complain :sob:
             for track_id in track_ids {
@@ -76,6 +79,21 @@ impl EventHandler for Handler {
                     tracks.push(track);
                 }
             };
+
+
+
+            /* TODO: Pray for miracles
+            let client_data_lock = ctx.data.clone();
+            let tracks: Vec<spotify_rs::model::track::Track> = stream::iter(track_ids.iter())
+                .filter_map(move |track_id| async move {
+                    let client_data_lock = client_data_lock.clone();
+                    let client_data = client_data_lock.read().await;
+                    let cloned_spotify_holder_lock = client_data.get::<SpotifyClientHolder>().expect("Expected SpotifyClientHolder in TypeMap").clone();
+                    let mut spotify_client = cloned_spotify_holder_lock.write().await;
+                    spotify_client.track(track_id).market(dotenv!("SPOTIFY_MARKET")).get().await.ok()
+                })
+                .collect().await;
+           */
 
             tracks
         };
