@@ -12,3 +12,4 @@ serenity = "0.12.2"
 spotify-rs = "0.3.14"
 tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
 regex = "1.10.6"
+log = "0.4.22"

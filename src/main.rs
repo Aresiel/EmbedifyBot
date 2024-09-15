@@ -3,17 +3,18 @@ extern crate dotenv_codegen;
 
 use std::sync::Arc;
 use std::time::Duration;
-use serenity::all::{Context, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage, EventHandler, GatewayIntents, Message, Ready};
-use serenity::{async_trait, Client};
+use serenity::all::{Context, CreateAttachment, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage, EventHandler, GatewayIntents, Http, Message, Ready};
+use serenity::{async_trait, Client, Error};
 use regex::Regex;
 use serenity::builder::CreateAllowedMentions;
-use serenity::futures::stream;
-use serenity::futures::StreamExt;
 use serenity::prelude::TypeMapKey;
 use spotify_rs::{ClientCredsClient, ClientCredsFlow};
 use spotify_rs::auth::{NoVerifier, Token};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
+use log::debug;
+use serenity::Error::Url;
+use spotify_rs::model::track::Track;
 
 struct SpotifyClientHolder;
 impl TypeMapKey for SpotifyClientHolder {
@@ -31,6 +32,11 @@ async fn message_author_has_embed_link_perm_inside_guild(ctx: &Context, msg: &Me
     Some(member_permissions.embed_links())
 }
 
+async fn get_preview_attachment(ctx: &Context, track: &Track) -> Option<CreateAttachment> {
+    let preview_url = track.preview_url.clone()?;
+    let attachment_with_wrong_name = CreateAttachment::url(&ctx.http, &*preview_url).await.ok()?;
+    Some(CreateAttachment::bytes(attachment_with_wrong_name.data, format!("{}.mp3", track.name)))
+}
 fn get_embeddable_spotify_track_ids_in_string(string: &String) -> Vec<String> {
     let track_re = Regex::new(r"(<?)https?://open\.spotify\.com/track/([A-Za-z0-9]*)[&?=A-Za-z0-9]*(>?)").unwrap();
 
@@ -64,7 +70,7 @@ impl EventHandler for Handler {
 
         let tracks: Vec<spotify_rs::model::track::Track> = {
             let track_ids: Vec<String> = get_embeddable_spotify_track_ids_in_string(&msg.content).iter()
-                .filter(|track_id| !is_spotify_track_id_embedded_in_message(&msg, track_id)) // Comment out if using embed suppression
+                //.filter(|track_id| !is_spotify_track_id_embedded_in_message(&msg, track_id)) // Comment out if using embed suppression
                 .map(|string| string.clone())
                 .collect();
 
@@ -118,8 +124,18 @@ impl EventHandler for Handler {
                     .footer(CreateEmbedFooter::new(format!("Released {}", track.album.release_date.clone())).icon_url(dotenv!("SPOTIFY_ICON_URL")))
             }).collect();
 
+            let mut files: Vec<CreateAttachment> = vec!();
+            /*
+            for track in tracks {
+                if let Some(attachment) = get_preview_attachment(&ctx, &track).await {
+                    files.push(attachment)
+                }
+            }
+            */
+
             let builder = CreateMessage::new()
                 .embeds(embeds)
+                .add_files(files)
                 .reference_message(&msg)
                 .allowed_mentions(CreateAllowedMentions::new());
 
